@@ -1,6 +1,6 @@
-# Claimable POIs alpha.5 source
+# Claimable POIs alpha.6 source
 
-Code and build inputs for the alpha.5 release. SOURCE-IDENTITY.json records the
+Code and build inputs for the alpha.6 release. SOURCE-IDENTITY.json records the
 original build and runtime hashes; a local rebuild will have its own identity.
 
 ## Requirements
@@ -23,7 +23,7 @@ git -C external/CommonLibSF/lib/commonlib-shared fetch --depth=1 https://github.
 git -C external/CommonLibSF/lib/commonlib-shared reset --mixed FETCH_HEAD
 git init
 git add .gitignore .gitattributes .gitmodules src scripts tests tools patches external/CommonLibSF xmake.lua global.json DEPENDENCIES.md README.md LICENSE EXCEPTIONS THIRD-PARTY-NOTICES.md
-git commit -m "Import alpha.5 source"
+git commit -m "Import alpha.6 source"
 ./scripts/prepare_papyrus_sources.ps1 -ContentResourcesPath 'YOUR-GAME/Tools/ContentResources.zip'
 ./scripts/build_candidate.ps1 -GameDataPath 'YOUR-GAME/Data'
 ```
@@ -31,9 +31,8 @@ git commit -m "Import alpha.5 source"
 Both library working trees must be clean. Build helpers apply and restore the
 included compatibility patch. Install the pinned SDK in .cache/dotnet-10.0.401
 or select it through CPOI_DOTNET_ROOT. Package with scripts/package.ps1; use the
-guarded scripts/deploy.ps1 only with the game closed. The included release helper
-uses its original archive layout; the published mod uses Data/ with legal notices
-under Data/Docs/ClaimablePOIs/.
+guarded scripts/deploy.ps1 only with the game closed. Release archives contain
+Data/ only, with legal notices under Data/Docs/ClaimablePOIs/.
 
 Library source and licenses are under external/; upstream/ contains the exact
 spdlog source ZIP. Public dependency downloads are needed for rebuilding. Vendor

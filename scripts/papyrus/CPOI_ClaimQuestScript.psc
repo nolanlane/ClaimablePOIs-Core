@@ -40,6 +40,15 @@ ObjectReference g_pendingBeacon = None
 ; older same-location claims retain a FormList/location fallback.
 ObjectReference[] g_splitClaimBeacons = None
 Location[] g_splitClaimLocations = None
+; Save-local snapshots for the official Location.SetNeverResets API. Never
+; touch a shared master/template location or infer ownership from proximity.
+Struct ClaimResetProtection
+    Location site
+    bool originallyNeverResets
+EndStruct
+ClaimResetProtection[] g_claimResetProtection = None
+int g_resetProtectionWorkerRequest = -1
+Guard ClaimResetGuard ProtectsFunctionLogic
 ; CPOI owns these newly created references. The original pad/ship references
 ; never enter this cleanup ledger and are never enabled, moved or deleted here.
 Struct ClaimLandingAnchor
@@ -137,6 +146,7 @@ Event Actor.OnPlayerLoadGame(Actor akSender)
     CancelTimer(3)
     CancelTimer(13)
     g_teardownWorkerRequest = -1
+    g_resetProtectionWorkerRequest = -1
     g_nativeLoadReady = CPOI_Native.NotifyPlayerLoaded(akSender)
     CancelDeferredOwnershipSweep()
     CancelTimer(11)
@@ -147,6 +157,7 @@ Event Actor.OnPlayerLoadGame(Actor akSender)
         return
     endif
     Debug.Trace("[CPOI] ClaimQuest OnPlayerLoadGame", 0)
+    RefreshClaimResetProtection()
     if !CPOI_Native.IsInheritedTeardownReady()
         Debug.Trace("[CPOI] InheritedTeardown-v4 protection unavailable; new mutations blocked, exact overlay recovery remains available", 0)
         Debug.Notification("CPOI teardown protection is unavailable. Do not remove outposts; preserve the CPOI log.")
@@ -248,6 +259,7 @@ Event Actor.OnLocationChange(Actor akSender, Location akOldLoc, Location akNewLo
     endif
 
     RetireRemovedClaimLandingAnchors()
+    RefreshClaimResetProtection()
 
 
     if g_workshopReplacementPending && g_workshopReplacementLocation != None && akNewLoc != g_workshopReplacementLocation
@@ -541,7 +553,7 @@ EndEvent
 Function InitializeCleanupSupport()
     g_cassiopeiaVersion = CassiopeiaPapyrusExtender.GetCassiopeiaPapyrusExtenderVersion()
     if g_cassiopeiaVersion >= 96
-        Debug.Trace("[CPOI] Cassiopeia high-actor cleanup available, version=" + g_cassiopeiaVersion, 0)
+        Debug.Trace("[CPOI] Cassiopeia cleanup support available, version=" + g_cassiopeiaVersion, 0)
     else
         Debug.Trace("[CPOI] Cassiopeia 9.6 unavailable; corpse cleanup and safe nearby-hostile checks are disabled", 0)
     endif
@@ -712,6 +724,116 @@ bool Function RecordSplitClaimPair(ObjectReference akBeacon, Location akLocation
         g_splitClaimLocations.Remove(i)
     endif
     return false
+EndFunction
+
+; Runs once per load/location change, and on successful claim finalization.
+; Existing alpha.5 pairs are sufficient; no new ESM forms or claim recreation.
+Function RefreshClaimResetProtection()
+    if !g_nativeLoadReady || CPOI_ClaimedBeacons == None || g_resetProtectionWorkerRequest >= 0
+        return
+    endif
+    int request = g_claimRequest
+    g_resetProtectionWorkerRequest = request
+    int count = CPOI_ClaimedBeacons.GetSize()
+    int protectedCount = 0
+    int unresolved = 0
+    ; This bounds our own claim ledger, not the engine's shared registry.
+    if count <= 256
+        int i = 0
+        while i < count && request == g_claimRequest && g_nativeLoadReady
+            ObjectReference beacon = CPOI_ClaimedBeacons.GetAt(i) as ObjectReference
+            Location site = FindClaimedLocationForBeacon(beacon)
+            if beacon != None && beacon == g_teardownBeacon
+                ; Confirmed removal restores its snapshot under the same guard.
+            elseif EnsureClaimResetProtection(beacon, site, request)
+                protectedCount += 1
+            else
+                unresolved += 1
+            endif
+            i += 1
+        endwhile
+    else
+        unresolved = count
+    endif
+    if g_resetProtectionWorkerRequest == request
+        g_resetProtectionWorkerRequest = -1
+    endif
+    if request == g_claimRequest && g_nativeLoadReady
+        Debug.Trace("[CPOI] ClaimResetProtection-v1 refresh protected=" + protectedCount + " unresolved=" + unresolved, 0)
+        if unresolved > 0
+            Debug.Notification("Some claimed sites could not receive reset protection. Check the CPOI Papyrus log.")
+        endif
+    endif
+EndFunction
+
+bool Function EnsureClaimResetProtection(ObjectReference akBeacon, Location akSite, int aiRequest)
+    LockGuard ClaimResetGuard
+        if aiRequest != g_claimRequest || !g_nativeLoadReady || akBeacon == None || akSite == None || akBeacon.IsDeleted() || akBeacon == g_teardownBeacon
+            return false
+        endif
+        ; FF-created locations belong to this save. Never flag a shared POI base,
+        ; parent planet/system location, or an ordinary untracked player outpost.
+        if !CassiopeiaPapyrusExtender.IsCreated(akSite) || FindClaimedLocationForBeacon(akBeacon) != akSite
+            Debug.Trace("[CPOI] ClaimResetProtection-v1 refused untracked/shared location=" + akSite, 0)
+            return false
+        endif
+        if g_claimResetProtection == None
+            g_claimResetProtection = new ClaimResetProtection[0]
+        endif
+        int index = g_claimResetProtection.FindStruct("site", akSite)
+        if index < 0
+            if g_claimResetProtection.Length >= 256
+                return false
+            endif
+            ClaimResetProtection snapshot = new ClaimResetProtection
+            snapshot.site = akSite
+            snapshot.originallyNeverResets = CPOI_Native.IsLocationNeverReset(akSite)
+            if aiRequest != g_claimRequest || !g_nativeLoadReady
+                return false
+            endif
+            ; Serialize the original value before the first write; retries and loads
+            ; must not replace it with the value that CPOI itself applied.
+            g_claimResetProtection.Add(snapshot)
+            index = g_claimResetProtection.FindStruct("site", akSite)
+            if index < 0
+                return false
+            endif
+        endif
+        if aiRequest != g_claimRequest || !g_nativeLoadReady || akBeacon == g_teardownBeacon || FindClaimedLocationForBeacon(akBeacon) != akSite
+            return false
+        endif
+        akSite.SetNeverResets(true)
+        bool verified = CPOI_Native.IsLocationNeverReset(akSite)
+        Debug.Trace("[CPOI] ClaimResetProtection-v1 apply site=" + akSite + " beacon=" + akBeacon + " original=" + g_claimResetProtection[index].originallyNeverResets + " verified=" + verified, 0)
+        return aiRequest == g_claimRequest && g_nativeLoadReady && verified
+    EndLockGuard
+EndFunction
+
+bool Function RestoreClaimResetProtection(Location akSite)
+    LockGuard ClaimResetGuard
+        if akSite == None || akSite != g_teardownClaimLocation || g_teardownToken == 0 || CPOI_Native.GetInheritedTeardownCompletion(g_teardownToken) != 1
+            return false
+        endif
+        if g_claimResetProtection == None
+            return true ; A claim removed before protection was applied owns no flag.
+        endif
+        int index = g_claimResetProtection.FindStruct("site", akSite)
+        if index < 0
+            return true
+        endif
+        if !g_nativeLoadReady || akSite == None || !CassiopeiaPapyrusExtender.IsCreated(akSite)
+            return false
+        endif
+        int request = g_claimRequest
+        bool original = g_claimResetProtection[index].originallyNeverResets
+        akSite.SetNeverResets(original)
+        if request != g_claimRequest || !g_nativeLoadReady || CPOI_Native.IsLocationNeverReset(akSite) != original
+            return false ; Retain the snapshot rather than guessing restoration.
+        endif
+        Debug.Trace("[CPOI] ClaimResetProtection-v1 restored site=" + akSite + " original=" + original, 0)
+        g_claimResetProtection.Remove(index)
+        return true
+    EndLockGuard
 EndFunction
 
 ; Cassiopeia clears native-event registrations when a save is loaded. Register
@@ -1570,150 +1692,182 @@ string Function GetDiagnosticFormID(Form akForm)
     return "0x" + Utility.IntToHex(akForm.GetFormID())
 EndFunction
 
-bool Function IsCleanupCandidate(ObjectReference akReference, ObjectReference akCenter, float afRadius, Actor akPlayer)
-    if akReference == None
-        Debug.Trace("[CPOI] Cleanup diagnostic rejected reason=none", 0)
+; Aliases used only as population collections do not make an ordinary spawned
+; enemy a story character. Never clear aliases or change their owning quests.
+bool Function CleanupAliasesAllowActor(Actor akActor)
+    if !CassiopeiaPapyrusExtender.IsAliasedRef(akActor)
+        return true
+    endif
+    if !CassiopeiaPapyrusExtender.IsCreated(akActor)
         return false
     endif
-
-    string refID = GetDiagnosticFormID(akReference)
-    int persistentState = -1
-    bool promotedPersistent = false
-    if g_cassiopeiaVersion >= 96
-        persistentState = CassiopeiaPapyrusExtender.IsPersistent(refID)
-        promotedPersistent = CassiopeiaPapyrusExtender.IsPromotedPersistent(refID)
-    endif
-
-    if akReference == akCenter
-        Debug.Trace("[CPOI] Cleanup diagnostic rejected ref=" + refID + " reason=center persistent=" + persistentState + " promoted=" + promotedPersistent, 0)
+    Alias[] holders = CassiopeiaPapyrusExtender.GetAliases(akActor)
+    if holders == None || holders.Length == 0 || holders.Length > 64
         return false
     endif
-    if akReference.IsDeleted()
-        Debug.Trace("[CPOI] Cleanup diagnostic rejected ref=" + refID + " reason=deleted persistent=" + persistentState + " promoted=" + promotedPersistent, 0)
-        return false
-    endif
-    if akReference.IsDisabled()
-        Debug.Trace("[CPOI] Cleanup diagnostic rejected ref=" + refID + " reason=disabled persistent=" + persistentState + " promoted=" + promotedPersistent, 0)
-        return false
-    endif
-    Cell centerCell = akCenter.GetParentCell()
-    if centerCell == None || akReference.GetParentCell() != centerCell
-        Debug.Trace("[CPOI] Cleanup diagnostic rejected ref=" + refID + " reason=cell persistent=" + persistentState + " promoted=" + promotedPersistent, 0)
-        return false
-    endif
-    if akReference.GetDistance(akCenter) > afRadius
-        Debug.Trace("[CPOI] Cleanup diagnostic rejected ref=" + refID + " reason=distance persistent=" + persistentState + " promoted=" + promotedPersistent, 0)
-        return false
-    endif
-    Actor actorReference = akReference as Actor
-    if actorReference == None
-        Debug.Trace("[CPOI] Cleanup diagnostic rejected ref=" + refID + " reason=non-actor persistent=" + persistentState + " promoted=" + promotedPersistent, 0)
-        return false
-    endif
-    if actorReference == akPlayer
-        Debug.Trace("[CPOI] Cleanup diagnostic rejected ref=" + refID + " reason=player persistent=" + persistentState + " promoted=" + promotedPersistent, 0)
-        return false
-    endif
-    if !actorReference.IsDead()
-        Debug.Trace("[CPOI] Cleanup diagnostic rejected ref=" + refID + " reason=alive persistent=" + persistentState + " promoted=" + promotedPersistent, 0)
-        return false
-    endif
-    if akReference.IsQuestItem()
-        Debug.Trace("[CPOI] Cleanup diagnostic rejected ref=" + refID + " reason=quest-item persistent=" + persistentState + " promoted=" + promotedPersistent, 0)
-        return false
-    endif
-    if actorReference.IsEssential()
-        Debug.Trace("[CPOI] Cleanup diagnostic rejected ref=" + refID + " reason=essential persistent=" + persistentState + " promoted=" + promotedPersistent, 0)
-        return false
-    endif
-    if actorReference.IsPlayerTeammate()
-        Debug.Trace("[CPOI] Cleanup diagnostic rejected ref=" + refID + " reason=teammate persistent=" + persistentState + " promoted=" + promotedPersistent, 0)
-        return false
-    endif
-    bool aliased = false
-    if g_cassiopeiaVersion < 96
-        return false
-    endif
-    aliased = CassiopeiaPapyrusExtender.IsAliasedRef(akReference)
-    if aliased
-        Debug.Trace("[CPOI] Cleanup diagnostic rejected ref=" + refID + " reason=quest-alias", 0)
-        return false
-    endif
-    Debug.Trace("[CPOI] Cleanup diagnostic accepted ref=" + refID + " persistent=" + persistentState + " promoted=" + promotedPersistent + " aliased=" + aliased, 0)
-    return true
-EndFunction
-
-int Function CleanupHighActors(Actor akPlayer, float afRadius, Cell akCell, Location akLocation, int aiRequest)
-    if akPlayer == None
-        return 0
-    endif
-
-    if g_cassiopeiaVersion < 96
-        Debug.Trace("[CPOI] High-actor cleanup unavailable; Cassiopeia 9.6 is required", 0)
-        return 0
-    endif
-
-    Actor[] candidates = CassiopeiaPapyrusExtender.GetHighActors()
-    if candidates == None
-        Debug.Trace("[CPOI] Cassiopeia GetHighActors returned None", 0)
-        return 0
-    endif
-
-    int disabled = 0
-    int batch = 0
-    int rejected = 0
     int i = 0
-    int scanLimit = candidates.Length
-    if scanLimit > 96
-        scanLimit = 96
-    endif
-    while i < scanLimit
-        if aiRequest != g_claimRequest || !g_nativeLoadReady || akPlayer.GetParentCell() != akCell || akPlayer.GetCurrentLocation() != akLocation || akPlayer.IsInCombat()
-            Debug.Trace("[CPOI] Cleanup stopped because its captured site/request changed", 0)
-            return disabled
+    while i < holders.Length
+        Alias holder = holders[i]
+        if holder == None
+            return false
         endif
-        Actor reference = candidates[i]
-        if IsCleanupCandidate(reference, akPlayer, afRadius, akPlayer)
-            if aiRequest != g_claimRequest || !g_nativeLoadReady || akPlayer.GetParentCell() != akCell || akPlayer.GetCurrentLocation() != akLocation
-                return disabled
+        Quest owner = holder.GetOwningQuest()
+        if owner == None
+            return false
+        endif
+        ; An active individual reference alias can be an objective, captive,
+        ; evidence body or named target, even when its actor base is generic.
+        if !(holder is RefCollectionAlias)
+            if !(holder is ReferenceAlias) || (owner.IsRunning() && !owner.IsCompleted())
+                Debug.Trace("[CPOI] CorpseCleanup-v4 protected actor=" + GetDiagnosticFormID(akActor) + " quest=" + owner + " alias=" + CassiopeiaPapyrusExtender.GetAliasName(holder), 0)
+                return false
             endif
-            reference.DisableNoWait(false)
-            disabled += 1
-            batch += 1
-        else
-            rejected += 1
-        endif
-        if batch >= 16
-            Utility.Wait(0.01)
-            batch = 0
         endif
         i += 1
     endwhile
-    if disabled > 0
-        Utility.Wait(0.05)
+    Debug.Trace("[CPOI] CorpseCleanup-v4 allowed generic spawned corpse with collection/inactive aliases actor=" + GetDiagnosticFormID(akActor), 0)
+    return true
+EndFunction
+
+bool Function IsCleanupCandidate(ObjectReference akReference, ObjectReference akCenter, float afRadius, Actor akPlayer)
+    Actor corpse = akReference as Actor
+    if corpse == None || akCenter == None || corpse == akPlayer || corpse == akCenter
+        return false
     endif
-    Debug.Trace("[CPOI] Cassiopeia high-actor cleanup returned=" + candidates.Length + " scanned=" + scanLimit + " disabled=" + disabled + " rejected=" + rejected + " truncated=" + (candidates.Length > scanLimit), 0)
-    return disabled
+    if !corpse.IsDead()
+        return false
+    endif
+    if corpse.IsDeleted() || corpse.IsDisabled()
+        Debug.Trace("[CPOI] CorpseCleanup-v4 rejected deleted/disabled actor=" + GetDiagnosticFormID(corpse), 0)
+        return false
+    endif
+    WorldSpace world = akCenter.GetWorldSpace()
+    Cell corpseCell = corpse.GetParentCell()
+    if world == None || corpse.GetWorldSpace() != world || corpseCell == None
+        Debug.Trace("[CPOI] CorpseCleanup-v4 rejected world/cell actor=" + GetDiagnosticFormID(corpse) + " actorWorld=" + corpse.GetWorldSpace() + " claimWorld=" + world + " actorCell=" + corpseCell, 0)
+        return false
+    endif
+    if corpseCell.IsInterior() || (!corpseCell.IsAttached() && !corpse.Is3DLoaded())
+        Debug.Trace("[CPOI] CorpseCleanup-v4 rejected interior/unloaded actor=" + GetDiagnosticFormID(corpse) + " cell=" + corpseCell, 0)
+        return false
+    endif
+    float distance = corpse.GetDistance(akCenter)
+    if distance > afRadius
+        Debug.Trace("[CPOI] CorpseCleanup-v4 rejected distance actor=" + GetDiagnosticFormID(corpse) + " distance=" + distance + " radius=" + afRadius, 0)
+        return false
+    endif
+    if corpse.IsQuestItem() || corpse.IsEssential() || corpse.IsPlayerTeammate()
+        Debug.Trace("[CPOI] CorpseCleanup-v4 protected quest/essential/teammate actor=" + GetDiagnosticFormID(corpse), 0)
+        return false
+    endif
+    ActorBase actorType = corpse.GetLeveledActorBase()
+    if actorType == None || actorType.IsUnique() || actorType.IsProtected() || actorType.IsEssential()
+        Debug.Trace("[CPOI] CorpseCleanup-v4 protected unique/protected/essential base actor=" + GetDiagnosticFormID(corpse), 0)
+        return false
+    endif
+    if g_cassiopeiaVersion < 100 || !CleanupAliasesAllowActor(corpse)
+        Debug.Trace("[CPOI] CorpseCleanup-v4 rejected alias metadata/policy actor=" + GetDiagnosticFormID(corpse), 0)
+        return false
+    endif
+    return true
+EndFunction
+
+bool Function IsCleanupContextCurrent(Actor akPlayer, Cell akCell, Location akLocation, int aiRequest, float afRadius = 500.0)
+    if aiRequest != g_claimRequest || !g_nativeLoadReady || akPlayer == None || akLocation == None || akPlayer.IsInCombat()
+        return false
+    endif
+    ObjectReference beacon = FindTrackedBeaconFor(akLocation)
+    Cell currentCell = akPlayer.GetParentCell()
+    if beacon == None || currentCell == None || currentCell.IsInterior() || beacon.GetWorldSpace() == None
+        return false
+    endif
+    ; Creating a real outpost can reassign the player's exterior cell/location
+    ; while standing still. Scope cleanup to the live claim, world and distance.
+    return akPlayer.GetWorldSpace() == beacon.GetWorldSpace() && akPlayer.GetDistance(beacon) <= afRadius
+EndFunction
+
+; Retained signature only. Broad cell arrays caused excessive VM work in v2;
+; never start another prop/reference sweep, including through an old caller.
+Actor[] Function CollectCleanupCellActors(Cell akCell, Actor akPlayer, float afRadius, Cell akClaimCell, Location akLocation, int aiRequest)
+    return new Actor[0]
+EndFunction
+
+int Function CleanupActorBatch(Actor[] akCandidates, Actor[] akSeen, Actor akPlayer, float afRadius, Cell akCell, Location akLocation, int aiRequest)
+    ; Retired v2/v3 dispatch. The active worker owns a single local candidate
+    ; array; never share an initially empty seen-array between helper calls.
+    return 0
+EndFunction
+
+; Preserve the old helper signature for saved stacks, without the96-item cutoff.
+int Function CleanupHighActors(Actor akPlayer, float afRadius, Cell akCell, Location akLocation, int aiRequest)
+    return CleanupSite(akPlayer, akCell, akLocation, afRadius, aiRequest)
 EndFunction
 
 int Function CleanupSite(Actor akPlayer, Cell akCell, Location akLocation, float afRadius, int aiRequest)
-    if aiRequest != g_claimRequest || !g_nativeLoadReady
+    float radius = Math.Min(1000.0, Math.Max(500.0, afRadius * 2.0))
+    if !IsCleanupContextCurrent(akPlayer, akCell, akLocation, aiRequest, radius) || g_cassiopeiaVersion < 100
+        Debug.Trace("[CPOI] CorpseCleanup-v4 refused: claim/world/range/request/combat context", 0)
         return 0
     endif
-    if akPlayer == None || akCell == None || akLocation == None || CPOI_ClaimedPOIs == None || !CPOI_ClaimedPOIs.HasForm(akLocation)
-        return 0
-    endif
-    if akPlayer.GetParentCell() != akCell || akPlayer.GetCurrentLocation() != akLocation
-        return 0
-    endif
-
-    Debug.Trace("[CPOI] CleanupSite begin: bounded Cassiopeia high-actor corpse scan; disabling eligible bodies", 0)
-
-    ; Procedural exterior POI corpses can be physically loaded while failing
-    ; actor-keyword and location-owned discovery. Cassiopeia supplies actors in
-    ; high process; IsCleanupCandidate restores exact-cell/radius boundaries.
-    int disabled = CleanupHighActors(akPlayer, afRadius, akCell, akLocation, aiRequest)
-    Debug.Trace("[CPOI] CleanupSite complete: disabled " + disabled + " eligible corpses", 0)
+    ObjectReference center = FindTrackedBeaconFor(akLocation)
+    ; A nonempty local array removes empty/None and cross-function mutation
+    ; ambiguity. Index0 stays None and is deliberately skipped by the worker.
+    Actor[] candidates = new Actor[1]
+    Actor[] high = CassiopeiaPapyrusExtender.GetHighActors()
+    int highCount = high.Length
+    int i = 0
+    while i < highCount && candidates.Length < 1025
+        if high[i] != None && candidates.Find(high[i]) < 0
+            candidates.Add(high[i])
+        endif
+        i += 1
+    endwhile
+    high = None
+    Actor[] localActors = akLocation.GetActors()
+    int locationCount = localActors.Length
+    i = 0
+    while i < locationCount && candidates.Length < 1025
+        if localActors[i] != None && candidates.Find(localActors[i]) < 0
+            candidates.Add(localActors[i])
+        endif
+        i += 1
+    endwhile
+    localActors = None
+    int disabled = 0
+    int scanned = 0
+    int dead = 0
+    int rejected = 0
+    Debug.Trace("[CPOI] CorpseCleanup-v4 begin radius=" + radius + " highActors=" + highCount + " locationActors=" + locationCount + " candidates=" + (candidates.Length - 1), 0)
+    i = 1
+    while i < candidates.Length
+        if !IsCleanupContextCurrent(akPlayer, akCell, akLocation, aiRequest, radius)
+            Debug.Trace("[CPOI] CorpseCleanup-v4 stopped: claim/world/range/request/combat changed scanned=" + scanned + " disabled=" + disabled, 0)
+            return disabled
+        endif
+        Actor corpse = candidates[i]
+        if corpse != None
+            scanned += 1 ; Count every actor screened, before any candidate filter.
+            if corpse.IsDead()
+                dead += 1
+            endif
+            if IsCleanupCandidate(corpse, center, radius, akPlayer)
+                if !IsCleanupContextCurrent(akPlayer, akCell, akLocation, aiRequest, radius)
+                    return disabled
+                endif
+                if corpse.IsDead() && !corpse.IsDeleted() && !corpse.IsDisabled() && !corpse.IsQuestItem() && !corpse.IsEssential() && !corpse.IsPlayerTeammate()
+                    corpse.DisableNoWait(false)
+                    disabled += 1
+                endif
+            else
+                rejected += 1
+            endif
+        endif
+        i += 1
+        if scanned % 16 == 0
+            Utility.Wait(0.01)
+        endif
+    endwhile
+    Debug.Trace("[CPOI] CorpseCleanup-v4 complete candidates=" + (candidates.Length - 1) + " scanned=" + scanned + " dead=" + dead + " rejected=" + rejected + " disabled=" + disabled + " actorLimitReached=" + (candidates.Length >= 1025), 0)
     return disabled
 EndFunction
 
@@ -1770,6 +1924,10 @@ bool Function FinalizeClaimForNativePlacement(Actor akPlayer, Cell akCell, Locat
     endif
 
     akLocation.SetExplored(true)
+    if !EnsureClaimResetProtection(FindTrackedBeaconFor(akLocation), akLocation, g_claimRequest)
+        Debug.Trace("[CPOI] ClaimResetProtection-v1 new claim is tracked but reset protection could not be verified", 0)
+        Debug.Notification("Claim created, but reset protection needs attention. Check the CPOI Papyrus log.")
+    endif
     Debug.Trace("[CPOI] Successfully finalized claim for location: " + akLocation, 0)
     return true
 EndFunction
@@ -2579,6 +2737,11 @@ bool Function ReconcileRemovedClaim(ObjectReference akBeacon, Location akClaimLo
     endif
     int i = g_splitClaimBeacons.Find(akBeacon)
     if i < 0 || g_splitClaimLocations[i] != akClaimLocation
+        return false
+    endif
+    ; Only independently confirmed vanilla removal reaches this point. Restore
+    ; before discarding the claim pair, so a failure retains recovery evidence.
+    if !RestoreClaimResetProtection(akClaimLocation)
         return false
     endif
     ; Persist exact owned-anchor retirement authority before clearing the pair.

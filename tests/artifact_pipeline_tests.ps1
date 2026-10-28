@@ -186,7 +186,8 @@ foreach ($case in @(
     & (Join-Path $workspace 'scripts\release.ps1') -Version '0.0.0-test' -PackageRoot $package -StagingRoot $stage -DistRoot (Join-Path $fixture 'dist') | Out-Null
     $zip = [System.IO.Compression.ZipFile]::OpenRead((Join-Path $fixture 'dist\ClaimablePOIs-v0.0.0-test.zip'))
     try {
-        Assert-Test ($zip.Entries.Count -eq ($case.count + 4) -and @($zip.Entries | Where-Object FullName -Match 'OSFUI').Count -eq 0) "$($case.name) release retains exact module selection"
+        Assert-Test ($zip.Entries.Count -eq ($case.count + 3) -and @($zip.Entries | Where-Object FullName -Match 'OSFUI').Count -eq 0) "$($case.name) release retains exact module selection"
+        Assert-Test (@($zip.Entries | Where-Object { -not $_.FullName.StartsWith('Data/', [StringComparison]::Ordinal) }).Count -eq 0 -and $null -ne $zip.GetEntry('Data/Docs/ClaimablePOIs/LICENSE') -and $null -eq $zip.GetEntry('README.md')) 'Release contains only Data files with required licenses'
     } finally { $zip.Dispose() }
     $corePackage = Join-Path $fixture 'core-projection\package'
     & (Join-Path $workspace 'scripts\package.ps1') -StagingRoot $stage -OutputRoot $corePackage -CoreOnly

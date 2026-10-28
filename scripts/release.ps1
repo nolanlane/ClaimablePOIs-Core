@@ -70,10 +70,9 @@ foreach ($gate in (Get-RequiredCandidateGates -Manifest $manifest)) {
 }
 $expectedManifest = @($manifest.artifacts.path)
 $installerSources = [ordered]@{
-    'README.md' = Join-Path $projectRoot 'README.md'
-    'LICENSE' = Join-Path $projectRoot 'LICENSE'
-    'EXCEPTIONS' = Join-Path $projectRoot 'EXCEPTIONS'
-    'THIRD-PARTY-NOTICES.md' = Join-Path $projectRoot 'THIRD-PARTY-NOTICES.md'
+    'Data/Docs/ClaimablePOIs/LICENSE' = Join-Path $projectRoot 'LICENSE'
+    'Data/Docs/ClaimablePOIs/EXCEPTIONS' = Join-Path $projectRoot 'EXCEPTIONS'
+    'Data/Docs/ClaimablePOIs/THIRD-PARTY-NOTICES.md' = Join-Path $projectRoot 'THIRD-PARTY-NOTICES.md'
 }
 
 $actualFiles = @(Get-ChildItem -LiteralPath $packageRootPath -File -Recurse)
