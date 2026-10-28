@@ -1,0 +1,50 @@
+.cache/
+.idea/
+.vs/
+.vscode/
+.xmake/
+
+# Local diagnostics, reverse-engineering experiments, and agent handoff notes.
+scratch/
+LastAgentMsg.md
+
+$out/
+$tmp/
+build/
+staging/
+package/
+package2/
+dist/
+package-backup-*/
+vs*/
+xedit/
+
+*.pdb
+*.zip
+compile_commands.json
+
+# .NET / Mutagen generator tool
+tools/ClaimablePOIsGen/bin/
+tools/ClaimablePOIsGen/obj/
+tools/ClaimProcessAudit/bin/
+tools/ClaimProcessAudit/obj/
+tests/GeneratorRegressionTests/bin/
+tests/GeneratorRegressionTests/obj/
+
+# Extracted Starfield script assets are local build/reference inputs, not source
+# distributables. Obtain them from the installed game when Papyrus compilation
+# or reverse engineering is required.
+tools/PapyrusPex/
+tools/PapyrusSource/
+tools/script-references/
+
+# Local third-party tool archives/binaries are not vendored into this repository.
+tools/Caprica/
+tools/Champollion/
+tools/xedit-4.1.5f/*.exe
+tools/xedit-4.1.5f/*.7z
+tools/ClaimablePOIsGen/.vs/
+tools/third-party/*/
+tools/third-party/.downloads/
+tools/third-party/.probe/
+tools/third-party/.install-*/

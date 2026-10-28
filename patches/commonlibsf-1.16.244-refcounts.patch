@@ -1,0 +1,60 @@
+diff --git a/include/RE/IDs.h b/include/RE/IDs.h
+index 1c11058..08762b4 100644
+--- a/include/RE/IDs.h
++++ b/include/RE/IDs.h
+@@ -2360,7 +2360,7 @@ namespace RE::ID
+ 
+ 	namespace TESForm
+ 	{
+-		inline constexpr REL::ID DecExternalRefCount{ 0 };  // 34165
++		inline constexpr REL::ID DecExternalRefCount{ 38743 };  // Starfield 1.16.244: 003846F0
+ 		inline constexpr REL::ID DecRefCount{ 38742 };
+ 		inline constexpr REL::ID LookupByID{ 47401 };
+ 		inline constexpr REL::ID LookupByEditorID{ 47403 };
+diff --git a/include/RE/T/TESFormRefCount.h b/include/RE/T/TESFormRefCount.h
+index 3f38e5f..325dc23 100644
+--- a/include/RE/T/TESFormRefCount.h
++++ b/include/RE/T/TESFormRefCount.h
+@@ -8,22 +8,37 @@ namespace RE
+ 	{
+ 	public:
+ 		SF_RTTI(TESFormRefCount);
++		// ClaimablePOIs compatibility patch for Starfield 1.16.244.
++		// Match the packed counters consumed by the engine's release functions.
++		static constexpr std::uint32_t kRuntimeRefCountABI = 116244;
++		static constexpr std::uint64_t kStrongIncrement = 0x80000200001;
++		static constexpr std::uint64_t kExternalIncrement = 0x80000200000;
+ 
+ 		enum
+ 		{
+-			kRefCountMask = 0x3FFFFF,
++			kRefCountMask = 0x1FFFFF,
+ 		};
+ 
++		static std::uint64_t AcquireStrong(volatile std::uint64_t& a_count)
++		{
++			REX::TAtomicRef count{ a_count };
++			return count.fetch_add(kStrongIncrement) + kStrongIncrement;
++		}
++
++		static std::uint64_t AcquireExternal(volatile std::uint64_t& a_count)
++		{
++			REX::TAtomicRef count{ a_count };
++			return count.fetch_add(kExternalIncrement) + kExternalIncrement;
++		}
++
+ 		std::uint64_t IncExternalRefCount() const
+ 		{
+-			REX::TAtomicRef myRefCount{ refCount };
+-			return (myRefCount += 0x400000) + 0x400000;
++			return AcquireExternal(refCount);
+ 		}
+ 
+ 		std::uint64_t IncRefCount() const
+ 		{
+-			REX::TAtomicRef myRefCount{ refCount };
+-			return ++myRefCount;
++			return AcquireStrong(refCount);
+ 		}
+ 
+ 		[[nodiscard]] std::uint64_t QRefCount() const

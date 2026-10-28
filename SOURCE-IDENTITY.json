@@ -1,0 +1,49 @@
+{
+  "source_commit": "0492e59aba7d0a042160d4a0a3c1b381664049ff",
+  "source_identity": "424FE72F1A52F34C6FD9C70DEF7D28403AB77C84FE77E5F19360546A12539EC4",
+  "runtime_artifacts": [
+    {
+      "path": "ClaimablePOIs.esm",
+      "length": 2959,
+      "sha256": "C425752DB847EE1063CEE907EEA0972BA5F22B040782114D838D29AA94A13989"
+    },
+    {
+      "path": "SFSE\\Plugins\\ClaimablePOIs.dll",
+      "length": 902656,
+      "sha256": "09C3E172B2E6833002EB5473A0129A1C434BF8247F193F62E223F389C486CFC3"
+    },
+    {
+      "path": "Scripts\\CPOI_Native.pex",
+      "length": 2967,
+      "sha256": "4B262C30F04724D181F45D73FA5727D87729551C8E9C81A9AD67FF91CD598322"
+    },
+    {
+      "path": "Scripts\\CPOI_ClaimQuestScript.pex",
+      "length": 133117,
+      "sha256": "E9A86EDA25A0321B550DE1E177A40FB3906B915F978725194BCD664F13789F76"
+    },
+    {
+      "path": "Scripts\\CPOI_ClaimBeaconEffect.pex",
+      "length": 1147,
+      "sha256": "314D9ADC093B3875A01CF39816854593E2378C29D0BB569A657F3392EEB6DE74"
+    },
+    {
+      "path": "Seq\\ClaimablePOIs.esm.seq",
+      "length": 4,
+      "sha256": "1A596979B947A35888B8E1826B885C91DD73D6FF25947B52D0B7131BD05D46BC"
+    }
+  ],
+  "libraries": [
+    {
+      "path": "external/CommonLibSF",
+      "revision": "6eeb9e60590db21b6f983d487b6b2d51a0fb6726"
+    },
+    {
+      "path": "external/CommonLibSF/lib/commonlib-shared",
+      "revision": "5470284e964d5510aa001dca3e0bb5548b6356a4"
+    }
+  ],
+  "spdlog_version": "1.16.0",
+  "spdlog_source_sha256": "3D25808D2FC4DB86621A46855800C99AB5734999B61C4CBF9470EDF631555397",
+  "spdlog_config": "static; std_format=true; wchar=true; no fmt dependency; optional CommonLib INI/JSON/TOML/Xbyak disabled"
+}
