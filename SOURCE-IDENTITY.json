@@ -47,5 +47,6 @@
   "spdlog_source_sha256": "3D25808D2FC4DB86621A46855800C99AB5734999B61C4CBF9470EDF631555397",
   "spdlog_config": "static; std_format=true; wchar=true; no fmt dependency; optional CommonLib INI/JSON/TOML/Xbyak disabled",
   "release_version": "0.1.0",
-  "cassiopeia_build_version": "12.0"
+  "cassiopeia_build_version": "12.0",
+  "cassiopeia_minimum_version": "10.0"
 }

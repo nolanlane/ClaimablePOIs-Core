@@ -7,7 +7,8 @@ original build and runtime hashes; a local rebuild will have its own identity.
 
 Windows x64, PowerShell 7, Visual Studio C++ tools, Git, XMake 3.0.9 and .NET SDK
 10.0.401. See DEPENDENCIES.md for versions. Supply your own Starfield/Creation Kit
-Papyrus inputs and install the runtime dependencies separately. This release uses Cassiopeia12.0; the published requirement is12.0 or newer.
+Papyrus inputs and install the runtime dependencies separately. Built with
+Cassiopeia 12.0; requires 10.0 or newer.
 
 ## Build
 
