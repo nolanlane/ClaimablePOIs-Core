@@ -1,13 +1,13 @@
-# Claimable POIs alpha.6 source
+# Claimable POIs 0.1.0 source
 
-Code and build inputs for the alpha.6 release. SOURCE-IDENTITY.json records the
+Code and build inputs for the 0.1.0 release. SOURCE-IDENTITY.json records the
 original build and runtime hashes; a local rebuild will have its own identity.
 
 ## Requirements
 
 Windows x64, PowerShell 7, Visual Studio C++ tools, Git, XMake 3.0.9 and .NET SDK
 10.0.401. See DEPENDENCIES.md for versions. Supply your own Starfield/Creation Kit
-Papyrus inputs and install the runtime dependencies separately.
+Papyrus inputs and install the runtime dependencies separately. This release uses Cassiopeia12.0; the published requirement is12.0 or newer.
 
 ## Build
 
@@ -23,7 +23,7 @@ git -C external/CommonLibSF/lib/commonlib-shared fetch --depth=1 https://github.
 git -C external/CommonLibSF/lib/commonlib-shared reset --mixed FETCH_HEAD
 git init
 git add .gitignore .gitattributes .gitmodules src scripts tests tools patches external/CommonLibSF xmake.lua global.json DEPENDENCIES.md README.md LICENSE EXCEPTIONS THIRD-PARTY-NOTICES.md
-git commit -m "Import alpha.6 source"
+git commit -m "Import 0.1.0 source"
 ./scripts/prepare_papyrus_sources.ps1 -ContentResourcesPath 'YOUR-GAME/Tools/ContentResources.zip'
 ./scripts/build_candidate.ps1 -GameDataPath 'YOUR-GAME/Data'
 ```

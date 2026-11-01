@@ -5,7 +5,7 @@
 | Steam Starfield | 1.16.244.0 |
 | SFSE | 0.2.21 — https://sfse.silverlock.org/ |
 | Address Library | v22; versionlib-1-16-244-0.bin — Nexus mod3256 |
-| Cassiopeia | 10.0 — Nexus mod10896 |
+| Cassiopeia | 12.0 or newer — Nexus mod10896; built with12.0 |
 | CommonLibSF | 6eeb9e60590db21b6f983d487b6b2d51a0fb6726 |
 | commonlib-shared | 5470284e964d5510aa001dca3e0bb5548b6356a4 |
 | spdlog | 1.16.0, static, std::format, wchar |
