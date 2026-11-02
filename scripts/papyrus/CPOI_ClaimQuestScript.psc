@@ -89,6 +89,8 @@ int g_workshopRestoreRetryCount = 0
 bool g_workshopStartDeferred = false
 ObjectReference g_workshopDeferredBeacon = None
 int g_cassiopeiaVersion = 0
+; Serialize zero-count checks across load, inventory-close and refund callbacks.
+Guard ClaimBeaconInventoryGuard ProtectsFunctionLogic
 ; Legacy serialized timer state; automatic ownership sweeping is disabled.
 ObjectReference g_deferredOwnershipBeacon = None
 Cell g_deferredOwnershipCell = None
@@ -543,10 +545,21 @@ Function RetireRemovedClaimLandingAnchors()
 EndFunction
 
 Event OnMenuOpenCloseEvent(String asMenuName, Bool abOpening)
-    if asMenuName == "InventoryMenu" && !abOpening && g_claimPending
-        ; Let the inventory stack finish closing before showing a modal message.
-        Utility.Wait(0.1)
-        ProcessPendingClaim()
+    if asMenuName == "InventoryMenu" && !abOpening
+        EnsureClaimBeaconInventory()
+        if g_claimPending
+            ; Let the inventory stack finish closing before showing a modal message.
+            Utility.Wait(0.1)
+            ProcessPendingClaim()
+        endif
+    endif
+EndEvent
+
+Event ObjectReference.OnItemRemoved(ObjectReference akSender, Form akBaseItem, int aiItemCount, ObjectReference akItemReference, ObjectReference akDestContainer, int aiTransferReason)
+    if akSender == Game.GetPlayer() && CPOI_ClaimTransponder != None && akBaseItem == CPOI_ClaimTransponder && aiItemCount > 0
+        ; Handles use, dropping, selling and transfer. Let the inventory operation
+        ; settle before checking; a remaining copy never needs a replacement.
+        StartBeaconRefundTimer()
     endif
 EndEvent
 
@@ -629,11 +642,13 @@ Function RegisterPlayerEvents()
         Self.RegisterForRemoteEvent(player, "OnOutpostPlaced")
         Self.RegisterForRemoteEvent(player, "OnLocationChange")
 
-        ; Ensure the player has the claim beacon item
-        if CPOI_ClaimTransponder != None && player.GetItemCount(CPOI_ClaimTransponder) == 0
-            player.AddItem(CPOI_ClaimTransponder, 1, false)
-            Debug.Trace("[CPOI] Added Claim Beacon to player inventory", 0)
+        if CPOI_ClaimTransponder != None
+            ; Filters are script-local. Reapply only this item on existing saves.
+            Self.RemoveInventoryEventFilter(CPOI_ClaimTransponder)
+            Self.AddInventoryEventFilter(CPOI_ClaimTransponder)
+            Self.RegisterForRemoteEvent(player, "OnItemRemoved")
         endif
+        EnsureClaimBeaconInventory(false)
     endif
     RegisterClaimedBeaconEvents()
 EndFunction
@@ -921,6 +936,16 @@ EndFunction
 
 ; --- Beacon refund (called by CPOI_ClaimBeaconEffect script) ---
 
+Function EnsureClaimBeaconInventory(bool abSilent = true)
+    LockGuard ClaimBeaconInventoryGuard
+        Actor player = Game.GetPlayer()
+        if player != None && CPOI_ClaimTransponder != None && player.GetItemCount(CPOI_ClaimTransponder) == 0
+            player.AddItem(CPOI_ClaimTransponder, 1, abSilent)
+            Debug.Trace("[CPOI] Restored missing Claim Beacon to player inventory", 0)
+        endif
+    EndLockGuard
+EndFunction
+
 Function StartBeaconRefundTimer()
     StartTimer(1.0, 1)
 EndFunction
@@ -933,11 +958,7 @@ Event OnTimer(Int aiTimerID)
         PollProtectedTeardown()
         StartTimer(1.0, 13)
     elseif aiTimerID == 1
-        Actor player = Game.GetPlayer()
-        if player != None && CPOI_ClaimTransponder != None && player.GetItemCount(CPOI_ClaimTransponder) == 0
-            player.AddItem(CPOI_ClaimTransponder, 1, true)
-            Debug.Trace("[CPOI] Refunded Claim Beacon to player", 0)
-        endif
+        EnsureClaimBeaconInventory()
     elseif aiTimerID == 2
         ; Retired preflight timeout: a modal may legitimately last >60 seconds.
         ; A timer must never release a lock owned by a suspended request.
@@ -1692,6 +1713,72 @@ string Function GetDiagnosticFormID(Form akForm)
     return "0x" + Utility.IntToHex(akForm.GetFormID())
 EndFunction
 
+; Bedlam is optional. Resolve only reviewed population quests after checking
+; the plugin; no master, custom script type or alias mutation is required.
+bool Function IsReviewedBedlamPopulationAlias(Alias akAlias, Quest akOwner)
+    if akAlias == None || akOwner == None || !(akAlias is ReferenceAlias) || g_cassiopeiaVersion < 100 || !Game.IsPluginInstalled("Bedlam.esm")
+        return false
+    endif
+    int aliasID = CassiopeiaPapyrusExtender.GetAliasIndex(akAlias)
+    if aliasID < 0 || akOwner.GetAlias(aliasID) != akAlias
+        return false
+    endif
+    string aliasName = CassiopeiaPapyrusExtender.GetAliasName(akAlias)
+    int ordinal = 0
+    string prefix = "Enemy"
+    if akOwner == (Game.GetFormFromFile(0x000809, "Bedlam.esm") as Quest)
+        if aliasID >= 20
+            return false
+        endif
+        ordinal = aliasID + 1
+    elseif akOwner == (Game.GetFormFromFile(0x00088D, "Bedlam.esm") as Quest)
+        if aliasID < 10
+            ordinal = aliasID + 1
+        elseif aliasID < 20
+            prefix = "NewEnemy"
+            ordinal = aliasID - 9
+        else
+            return false
+        endif
+    elseif akOwner == (Game.GetFormFromFile(0x000822, "Bedlam.esm") as Quest)
+        ; Reinforcement selectors cover every supported faction, not just the
+        ; first RandomEnemy alias observed in the initial Spacer trial.
+        if aliasID == 4 || (aliasID >= 10 && aliasID <= 13) || aliasID == 27
+            return (aliasID == 4 && aliasName == "RandomSpacer") || (aliasID == 10 && aliasName == "RandomSyndicate") || (aliasID == 11 && aliasName == "RandomCrimsonFleet") || (aliasID == 12 && aliasName == "RandomEcliptic") || (aliasID == 13 && aliasName == "RandomVaruun") || (aliasID == 27 && aliasName == "RandomEnemy")
+        elseif aliasID == 18
+            prefix = "NewEnemy"
+            ordinal = 1
+        elseif aliasID >= 23 && aliasID <= 26
+            prefix = "NewEnemy"
+            ordinal = aliasID - 21
+        else
+            return false
+        endif
+    elseif akOwner == (Game.GetFormFromFile(0x000865, "Bedlam.esm") as Quest)
+        ; The assault controller also retains its chosen target and spawned
+        ; assailants. Player/boss/spawn-marker roles are never exempted.
+        if aliasID <= 3 || aliasID == 6
+            return (aliasID == 0 && aliasName == "RandomSpacer") || (aliasID == 1 && aliasName == "RandomCrimsonFleet") || (aliasID == 2 && aliasName == "RandomEcliptic") || (aliasID == 3 && aliasName == "RandomVaruun") || (aliasID == 6 && aliasName == "RandomEnemy")
+        elseif aliasID == 5
+            prefix = "Assailant"
+            ordinal = 1
+        elseif aliasID >= 7 && aliasID <= 15
+            prefix = "Assailant"
+            ordinal = aliasID - 5
+        else
+            return false
+        endif
+    else
+        return false
+    endif
+    string expectedName = prefix
+    if ordinal < 10
+        expectedName += "0"
+    endif
+    expectedName += ordinal as string
+    return aliasName == expectedName
+EndFunction
+
 ; Aliases used only as population collections do not make an ordinary spawned
 ; enemy a story character. Never clear aliases or change their owning quests.
 bool Function CleanupAliasesAllowActor(Actor akActor)
@@ -1715,17 +1802,25 @@ bool Function CleanupAliasesAllowActor(Actor akActor)
         if owner == None
             return false
         endif
-        ; An active individual reference alias can be an objective, captive,
-        ; evidence body or named target, even when its actor base is generic.
+        ; Active individual aliases remain protected except exact reviewed
+        ; Bedlam population roles. Continue checking ALL holders afterwards:
+        ; a separate active objective alias must still protect the same actor.
         if !(holder is RefCollectionAlias)
-            if !(holder is ReferenceAlias) || (owner.IsRunning() && !owner.IsCompleted())
+            if !(holder is ReferenceAlias)
                 Debug.Trace("[CPOI] CorpseCleanup-v4 protected actor=" + GetDiagnosticFormID(akActor) + " quest=" + owner + " alias=" + CassiopeiaPapyrusExtender.GetAliasName(holder), 0)
                 return false
+            endif
+            if owner.IsRunning() && !owner.IsCompleted()
+                if !IsReviewedBedlamPopulationAlias(holder, owner)
+                    Debug.Trace("[CPOI] CorpseCleanup-v4 protected actor=" + GetDiagnosticFormID(akActor) + " quest=" + owner + " alias=" + CassiopeiaPapyrusExtender.GetAliasName(holder), 0)
+                    return false
+                endif
+                Debug.Trace("[CPOI] BedlamCleanup-v2 recognized population alias actor=" + GetDiagnosticFormID(akActor) + " quest=" + owner + " alias=" + CassiopeiaPapyrusExtender.GetAliasName(holder), 0)
             endif
         endif
         i += 1
     endwhile
-    Debug.Trace("[CPOI] CorpseCleanup-v4 allowed generic spawned corpse with collection/inactive aliases actor=" + GetDiagnosticFormID(akActor), 0)
+    Debug.Trace("[CPOI] CorpseCleanup-v4 allowed generic corpse with reviewed aliases actor=" + GetDiagnosticFormID(akActor), 0)
     return true
 EndFunction
 

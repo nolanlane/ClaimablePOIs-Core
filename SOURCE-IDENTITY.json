@@ -1,6 +1,6 @@
 {
-  "source_commit": "82c6ae456acd04a3ebc1d1f5e46fcdba5d2ef979",
-  "source_identity": "8709BBEF878822A2571481CB16E1CA3C77F0DB27CBF6BAE37396E31F0532193C",
+  "source_commit": "83198059e0c4c7ad6b7aa8fcba8521547f0c8436",
+  "source_identity": "9E3B93C7770C4FD19E2DC9E3D23EA6AB504C406FAF0414F087E2B7D7800CFD4C",
   "runtime_artifacts": [
     {
       "path": "ClaimablePOIs.esm",
@@ -10,22 +10,22 @@
     {
       "path": "SFSE\\Plugins\\ClaimablePOIs.dll",
       "length": 902656,
-      "sha256": "1C36BBC06294DC8932A81189B62076959C1E8957671DB79430490443AA23CFDB"
+      "sha256": "84D7AF9A1825F2601BD34DAD522BFA5C86A8A7328A779CC83DB6DC4596EED74C"
     },
     {
       "path": "Scripts\\CPOI_Native.pex",
       "length": 2967,
-      "sha256": "8C4D9B047F93F12C495C3257D2147A8285F7A78DBFC264556901626814DD613A"
+      "sha256": "6F85F728853DA0B311D9DE011EF94E585B67558CEEE82CAA65D6DA0AF9DB5557"
     },
     {
       "path": "Scripts\\CPOI_ClaimQuestScript.pex",
-      "length": 141651,
-      "sha256": "9976E8726534D775B8A5AA235443A740E30A66A4FDC79A59622C79904B25F4A1"
+      "length": 146517,
+      "sha256": "660D57D5A5B3EDEBF450787C289F4BE9AD8A21CCE37D34C39B72617FD46CD567"
     },
     {
       "path": "Scripts\\CPOI_ClaimBeaconEffect.pex",
       "length": 1147,
-      "sha256": "94989197307A338CC9FB306A5089353EECE786B056CCB7B8AD1738E3CC7332DC"
+      "sha256": "14F6637B457D9037B76FC3CEA3E7F1DD3F4BDBE24FC9C36A980223DDD4F9F806"
     },
     {
       "path": "Seq\\ClaimablePOIs.esm.seq",
@@ -46,7 +46,7 @@
   "spdlog_version": "1.16.0",
   "spdlog_source_sha256": "3D25808D2FC4DB86621A46855800C99AB5734999B61C4CBF9470EDF631555397",
   "spdlog_config": "static; std_format=true; wchar=true; no fmt dependency; optional CommonLib INI/JSON/TOML/Xbyak disabled",
-  "release_version": "0.1.0",
-  "cassiopeia_build_version": "12.0",
-  "cassiopeia_minimum_version": "10.0"
+  "cassiopeia_minimum_version": "10.0",
+  "release_version": "0.1.1",
+  "cassiopeia_build_version": "12.0"
 }

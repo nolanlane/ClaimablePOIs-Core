@@ -88,7 +88,7 @@ namespace ClaimablePOIs::Plugin
 			.trampolineSize = 512
 		});
 		ClaimablePOIs::Diagnostics::Initialize();
-		REX::INFO("ClaimablePOIs 0.1.0: verbose diagnostics={}", ClaimablePOIs::Diagnostics::Enabled());
+		REX::INFO("ClaimablePOIs 0.1.1: verbose diagnostics={}", ClaimablePOIs::Diagnostics::Enabled());
 		if (SFSE::GetSFSEVersion() != SFSE::SFSE_PACK_LATEST.pack()) {
 			Disable("unsupported SFSE version");
 			return false;

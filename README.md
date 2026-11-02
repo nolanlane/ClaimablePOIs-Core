@@ -1,6 +1,6 @@
-# Claimable POIs 0.1.0 source
+# Claimable POIs 0.1.1 source
 
-Code and build inputs for the 0.1.0 release. SOURCE-IDENTITY.json records the
+Code and build inputs for the 0.1.1 release. SOURCE-IDENTITY.json records the
 original build and runtime hashes; a local rebuild will have its own identity.
 
 ## Requirements
@@ -24,7 +24,7 @@ git -C external/CommonLibSF/lib/commonlib-shared fetch --depth=1 https://github.
 git -C external/CommonLibSF/lib/commonlib-shared reset --mixed FETCH_HEAD
 git init
 git add .gitignore .gitattributes .gitmodules src scripts tests tools patches external/CommonLibSF xmake.lua global.json DEPENDENCIES.md README.md LICENSE EXCEPTIONS THIRD-PARTY-NOTICES.md
-git commit -m "Import 0.1.0 source"
+git commit -m "Import 0.1.1 source"
 ./scripts/prepare_papyrus_sources.ps1 -ContentResourcesPath 'YOUR-GAME/Tools/ContentResources.zip'
 ./scripts/build_candidate.ps1 -GameDataPath 'YOUR-GAME/Data'
 ```
